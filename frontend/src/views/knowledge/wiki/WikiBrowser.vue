@@ -692,6 +692,13 @@
         @closePreImg="closeImagePreview" />
     </Teleport>
 
+    <!-- Source citation: the cited passage in its original file, as in chat references -->
+    <t-drawer v-model:visible="citeDrawerVisible" :header="$t('knowledgeEditor.wikiBrowser.sources')" size="560px"
+      :footer="false" placement="right" :close-btn="true" class="wiki-cite-drawer">
+      <ChatReferenceSourceView v-if="citeTarget" class="wiki-cite-source" :target="citeTarget"
+        :active="citeDrawerVisible" @unavailable="citeDrawerVisible = false" />
+    </t-drawer>
+
     <!-- Global Issues Drawer -->
     <t-drawer v-model:visible="showGlobalIssuesDrawer" :header="$t('knowledgeEditor.wikiBrowser.globalIssuesTitle')"
       size="480px" :footer="false" class="wiki-global-issues-drawer">
@@ -820,6 +827,8 @@ import { RecycleScroller } from 'vue-virtual-scroller'
 import { hydrateProtectedFileImages, sanitizeMarkdownHTML } from '@/utils/security'
 import type { ProtectedFileAccessContext } from '@/utils/protectedFileAccess'
 import picturePreview from '@/components/picture-preview.vue'
+import ChatReferenceSourceView from '@/components/ChatReferenceSourceView.vue'
+import type { ReferenceSourceTarget } from '@/utils/referenceSources'
 import WikiFolderActions from './WikiFolderActions.vue'
 import WikiRevisionDrawer from './WikiRevisionDrawer.vue'
 import {
@@ -1650,9 +1659,52 @@ async function openGraphDrawer(slug: string) {
   }
 }
 
+// Source citations are Markdown links of the form
+// [p. 12](#cite?k=<knowledge id>&c=<chunk id>[&q=<quoted text>]). They open the
+// cited passage in the same source view that chat references use, which
+// scrolls the original file to the chunk and highlights the quote.
+const citeDrawerVisible = ref(false)
+const citeTarget = ref<ReferenceSourceTarget | null>(null)
+
+// Without an explicit q, the anchor is the «quote» right before the link in the
+// same block, else the sentence the citation closes. The source view highlights
+// it when it occurs verbatim in the chunk and the whole chunk otherwise.
+function citationAnchor(link: HTMLAnchorElement): string {
+  const block = link.closest('p, li, td, th, blockquote') || link.parentElement
+  if (!block) return ''
+  const range = document.createRange()
+  range.setStart(block, 0)
+  range.setEndBefore(link)
+  const before = range.toString()
+  // Short «titles» (the book name) may sit between the quote and the link;
+  // a short title alone is not taken for the quote.
+  const quoted = before.match(/«([^«»]{8,})»(?:[^«»]|«[^«»]{1,40}»){0,80}$/)
+  if (quoted && quoted[1].length > 40) return quoted[1]
+  const sentence = before.split(/(?<=[.!?;])\s+|\n/).pop() || ''
+  return sentence.replace(/[\s(—–-]+$/, '').trim()
+}
+
+function openCitationLink(link: HTMLAnchorElement | null): boolean {
+  const href = link?.getAttribute('href') || ''
+  if (!link || !href.startsWith('#cite?')) return false
+  const params = new URLSearchParams(href.slice('#cite?'.length))
+  const knowledgeId = params.get('k')
+  if (!knowledgeId) return false
+  citeTarget.value = {
+    knowledgeId,
+    chunkId: params.get('c') || undefined,
+    knowledgeBaseId: props.knowledgeBaseId,
+    anchorText: params.get('q') || citationAnchor(link) || undefined,
+  }
+  citeDrawerVisible.value = true
+  return true
+}
+
 function handleGraphDrawerClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (target.classList.contains('wiki-content-link')) {
+  if (openCitationLink(target.closest('a'))) {
+    e.preventDefault()
+  } else if (target.classList.contains('wiki-content-link')) {
     e.preventDefault()
     const slug = target.getAttribute('data-slug')
     if (slug) handleGraphSearchSelect(slug)
@@ -2163,7 +2215,9 @@ watch(renderedIndexMarkdown, async () => {
 
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (target.classList.contains('wiki-content-link')) {
+  if (openCitationLink(target.closest('a'))) {
+    e.preventDefault()
+  } else if (target.classList.contains('wiki-content-link')) {
     e.preventDefault()
     const slug = target.getAttribute('data-slug')
     if (slug) navigateToSlug(slug)
@@ -7023,3 +7077,17 @@ span.graph-focus-name {
 </style>
 
 <style lang="less" src="@/components/css/wiki-graph-drawer.less"></style>
+
+<style lang="less">
+// Not scoped: the drawer body is rendered by TDesign outside this component's scope.
+.wiki-cite-drawer .t-drawer__body {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.wiki-cite-drawer .wiki-cite-source {
+  flex: 1;
+  min-height: 0;
+}
+</style>
