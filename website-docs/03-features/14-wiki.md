@@ -57,6 +57,20 @@ Wiki 生成会增加模型调用，用量取决于文档规模和抽取密度。
 
 系统优先清理自动生成的旧版本：达到 50 个历史版本后清理可裁剪快照，达到 200 个时按硬上限清理全部来源。需要长期保存的内容应另行归档。升级前写入的版本或已被清理的版本没有快照：选中这类版本时历史面板显示提示而不是差异；对比基线缺失时直接展示所选版本的全文。其他版本的比较和回滚不受影响。
 
+## 在页面中引用原文 {#source-citations}
+
+人工编写，或通过 Wiki API、智能体工具写入的页面，可以在正文中使用与对话回答相同的 `<kb/>` 引用标签，指向支撑这段文字的分块。`doc` 是显示的文档名，`chunk_id` 是分块 ID，两者都必填：
+
+```markdown
+纯函数对相同输入总是返回相同结果（第 12 页 <kb doc="函数式编程" chunk_id="<分块 ID>"/>）。
+```
+
+- 标签显示为与对话相同的引用标记，悬停可预览分块内容。
+- 点击后在右侧引用面板中打开原始文件，定位并高亮该分块；页面为面板让出位置，正文与原文并排阅读。引用前的文字若含有原文的直接引语（“……”、「……」或 «……»），只高亮这段引语。
+- 面板宽度可拖动调整并会被记住，但始终为页面正文保留可读宽度；「返回」列出本页引用的全部分块。
+
+分块 ID 可通过分块列表接口 `GET /api/v1/chunks/{knowledge_id}` 获取。自动生成的页面不在正文中写分块引用，证据记录在 `ChunkRefs` 字段中。
+
 ## 查看变更与生成状态
 
 页面创建、更新、删除和批量生成的操作记录统一显示在「知识库 → 设置 → 活动」。文档处理期间可查看索引状态；服务重启后，系统会恢复持久化的待处理 Wiki 任务。删除知识库时，其 Wiki 页面、目录、问题和版本历史一并清理。接口兼容与恢复机制见参考部分。
@@ -331,4 +345,4 @@ flowchart TD
 | 失败恢复 | `internal/container/recover_pending_wiki_tasks.go` |
 | 路由 | `internal/router/routes_knowledge.go` 的 `RegisterWikiPageRoutes`（行为测试见 `internal/router/router_wiki_test.go`） |
 | 数据库迁移 | `migrations/versioned/000037_wiki_and_indexing.up.sql`、`000061_wiki_page_hierarchy.up.sql`、`000077_remove_wiki_log.up.sql` |
-| 前端 | `frontend/src/views/knowledge/wiki/WikiBrowser.vue`、`frontend/src/api/wiki/`、`frontend/src/utils/wikiToolReferences.ts` |
+| 前端 | `frontend/src/views/knowledge/wiki/WikiBrowser.vue`、`frontend/src/views/knowledge/wiki/wikiCitations.ts`（页内 `<kb/>` 引用）、`frontend/src/api/wiki/`、`frontend/src/utils/wikiToolReferences.ts` |
