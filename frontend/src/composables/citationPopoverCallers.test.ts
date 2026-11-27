@@ -34,6 +34,8 @@ const stub: any = new Proxy(function () {}, {
     if (key === Symbol.iterator) return function* () {}
     if (key === 'then') return undefined
     if (key === '__esModule') return true
+    // Not a Vue proxy: reactivity flags such as __v_raw must not chain forever.
+    if (typeof key === 'string' && key.startsWith('__v_')) return undefined
     return stub
   },
   apply: () => stub,

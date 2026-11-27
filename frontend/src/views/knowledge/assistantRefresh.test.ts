@@ -86,6 +86,9 @@ test('refreshes Wiki pages, selected content and statistics for its own KB only'
     'tdesign-vue-next': { MessagePlugin: { error: assert.fail } },
     '@/stores/assistant': { useAssistantStore: () => ({ visible: false }) },
     '@/composables/useAssistantPageContext': { useAssistantPageContext() {} },
+    '@/composables/useChatCitationPopover': {
+      useChatCitationPopover: () => ({ float: {}, cancelClose() {}, scheduleClose() {} }),
+    },
     '@/stores/settings': { useSettingsStore: () => ({}) },
     '@/api/wiki': {
       getWikiPage, getWikiIndex, getWikiStats,

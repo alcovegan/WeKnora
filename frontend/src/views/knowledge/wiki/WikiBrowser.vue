@@ -422,7 +422,7 @@
       </aside>
 
       <!-- Right Panel: Reader -->
-      <div class="wiki-content">
+      <div ref="wikiContentRef" class="wiki-content">
         <div class="wiki-reader">
           <div class="wiki-reader-inner">
             <template v-if="selectedPage">
@@ -701,6 +701,8 @@
         @closePreImg="closeImagePreview" />
     </Teleport>
 
+    <ChatCitationFloat :float="citationFloat" :on-enter="cancelCitationClose" :on-leave="scheduleCitationClose" />
+
     <!-- Global Issues Drawer -->
     <t-drawer v-model:visible="showGlobalIssuesDrawer" :header="$t('knowledgeEditor.wikiBrowser.globalIssuesTitle')"
       size="480px" :footer="false" class="wiki-global-issues-drawer">
@@ -829,6 +831,8 @@ import { RecycleScroller } from 'vue-virtual-scroller'
 import { hydrateProtectedFileImages, sanitizeMarkdownHTML } from '@/utils/security'
 import type { ProtectedFileAccessContext } from '@/utils/protectedFileAccess'
 import picturePreview from '@/components/picture-preview.vue'
+import ChatCitationFloat from '@/components/ChatCitationFloat.vue'
+import { useChatCitationPopover } from '@/composables/useChatCitationPopover'
 import WikiFolderActions from './WikiFolderActions.vue'
 import WikiRevisionDrawer from './WikiRevisionDrawer.vue'
 import {
@@ -837,6 +841,7 @@ import {
 } from './wikiDirectoryState'
 import { resolveWikiBacklinkTitle } from './wikiBacklinkTitles'
 import { createWikiMarkdownRenderer, renderWikiMermaid } from './wikiMermaid'
+import { renderWithCitations } from './wikiCitations'
 import { buildGraphLayout, graphNodeRadius, stepGraphLayout, visibleGraphLabels, graphPointBounds, initialGraphViewport, graphClusterOutline, graphLandmarkTitle, graphDetailSlugs, graphDetailLevelForSlug, GRAPH_DETAIL_MAX, type GraphBounds, type GraphCluster, type LayoutPlacement } from './wikiGraphLayout'
 import { getKnowledgeDetails } from '@/api/knowledge-base'
 import { useAssistantStore } from '@/stores/assistant'
@@ -1051,6 +1056,13 @@ const graphSearchValue = ref('')
 const graphRef = ref<HTMLElement | null>(null)
 const readerBodyRef = ref<HTMLElement | null>(null)
 const drawerBodyRef = ref<HTMLElement | null>(null)
+// Hovering a <kb/> citation previews the cited chunk, as in the chat.
+const wikiContentRef = ref<HTMLElement | null>(null)
+const {
+  float: citationFloat,
+  cancelClose: cancelCitationClose,
+  scheduleClose: scheduleCitationClose,
+} = useChatCitationPopover(wikiContentRef, { sessionId: () => `wiki:${props.knowledgeBaseId}` })
 const loading = ref(false)
 const graphLoading = ref(false)
 const graphReady = ref(false)
@@ -1693,7 +1705,8 @@ function renderMarkdown(content: string): string {
     return `<a href="#" class="wiki-content-link" data-slug="${slug}">${display}</a>`
   })
 
-  const html = marked.parse(preprocessed, { breaks: true, async: false, renderer: wikiRenderer }) as string
+  const html = renderWithCitations(preprocessed, (markdown) =>
+    marked.parse(markdown, { breaks: true, async: false, renderer: wikiRenderer }) as string)
   return sanitizeMarkdownHTML(html)
 }
 
@@ -5380,6 +5393,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="less">
+@import (reference) '@/components/css/chat-citations.less';
+
 .wiki-browser {
   display: flex;
   height: 100%;
@@ -6298,6 +6313,9 @@ onUnmounted(() => {
   line-height: 1.6;
   font-size: var(--app-text-base);
   color: var(--td-text-color-primary);
+
+  // <kb/> source citations look like the chat's.
+  .chat-citation-pills();
 
   :deep(pre.mermaid) {
     margin: 12px 0;
