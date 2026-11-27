@@ -203,6 +203,8 @@ import {
 const props = defineProps<{
   embeddedMode?: boolean
   overlayBreakpoint?: number
+  /** Width the host view keeps beside the docked panel; defaults to the chat column. */
+  reservedWidth?: number
 }>()
 
 const { t } = useI18n()
@@ -249,7 +251,7 @@ const useOverlay = computed(() => {
 
 const maxPanelWidth = computed(() => useOverlay.value
   ? viewportWidth.value
-  : Math.min(1400, Math.max(360, viewportWidth.value - 560)))
+  : Math.min(1400, Math.max(360, viewportWidth.value - (props.reservedWidth ?? 560))))
 const minPanelWidth = computed(() => Math.min(sourceTarget.value ? 360 : 320, maxPanelWidth.value))
 const clampPanelWidth = (width: number) => Math.max(minPanelWidth.value, Math.min(maxPanelWidth.value, width))
 // Preserve independent preferences when switching between the list and original.
