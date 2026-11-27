@@ -1,5 +1,6 @@
 <template>
-  <div class="wiki-browser">
+  <div class="wiki-browser" :class="{ 'has-references-panel': referencesPanelVisible }"
+    :style="{ '--references-panel-width': `${referencesPanelWidth}px` }">
     <!-- Graph view (full screen) -->
     <template v-if="view === 'graph'">
       <div class="wiki-graph">
@@ -422,7 +423,7 @@
       </aside>
 
       <!-- Right Panel: Reader -->
-      <div ref="wikiContentRef" class="wiki-content">
+      <div ref="wikiContentRef" class="wiki-content" @keydown="handleCitationKeydown">
         <div class="wiki-reader">
           <div class="wiki-reader-inner">
             <template v-if="selectedPage">
@@ -702,6 +703,7 @@
     </Teleport>
 
     <ChatCitationFloat :float="citationFloat" :on-enter="cancelCitationClose" :on-leave="scheduleCitationClose" />
+    <ChatReferencesDrawer :reserved-width="referencesPanelReserve" />
 
     <!-- Global Issues Drawer -->
     <t-drawer v-model:visible="showGlobalIssuesDrawer" :header="$t('knowledgeEditor.wikiBrowser.globalIssuesTitle')"
@@ -832,7 +834,11 @@ import { hydrateProtectedFileImages, sanitizeMarkdownHTML } from '@/utils/securi
 import type { ProtectedFileAccessContext } from '@/utils/protectedFileAccess'
 import picturePreview from '@/components/picture-preview.vue'
 import ChatCitationFloat from '@/components/ChatCitationFloat.vue'
+import ChatReferencesDrawer from '@/components/ChatReferencesDrawer.vue'
 import { useChatCitationPopover } from '@/composables/useChatCitationPopover'
+import { provideChatReferencesDrawer } from '@/composables/useChatReferencesDrawer'
+import { citationAnchorText } from '@/utils/citationAnchor'
+import type { KnowledgeReferenceLike } from '@/utils/referenceSources'
 import WikiFolderActions from './WikiFolderActions.vue'
 import WikiRevisionDrawer from './WikiRevisionDrawer.vue'
 import {
@@ -841,9 +847,9 @@ import {
 } from './wikiDirectoryState'
 import { resolveWikiBacklinkTitle } from './wikiBacklinkTitles'
 import { createWikiMarkdownRenderer, renderWikiMermaid } from './wikiMermaid'
-import { renderWithCitations } from './wikiCitations'
+import { createCitationReferenceLoader, renderWithCitations } from './wikiCitations'
 import { buildGraphLayout, graphNodeRadius, stepGraphLayout, visibleGraphLabels, graphPointBounds, initialGraphViewport, graphClusterOutline, graphLandmarkTitle, graphDetailSlugs, graphDetailLevelForSlug, GRAPH_DETAIL_MAX, type GraphBounds, type GraphCluster, type LayoutPlacement } from './wikiGraphLayout'
-import { getKnowledgeDetails } from '@/api/knowledge-base'
+import { getChunkByIdOnly, getKnowledgeDetails } from '@/api/knowledge-base'
 import { useAssistantStore } from '@/stores/assistant'
 import AssistantButton from '@/components/assistant/AssistantButton.vue'
 import AssistantActionsButton from '@/components/assistant/AssistantActionsButton.vue'
@@ -1062,7 +1068,22 @@ const {
   float: citationFloat,
   cancelClose: cancelCitationClose,
   scheduleClose: scheduleCitationClose,
-} = useChatCitationPopover(wikiContentRef, { sessionId: () => `wiki:${props.knowledgeBaseId}` })
+} = useChatCitationPopover(wikiContentRef, {
+  sessionId: () => `wiki:${props.knowledgeBaseId}`,
+  openKnowledgeCitation: (el) => {
+    void openCitation(el)
+    return true
+  },
+})
+// Clicking one opens the cited passage in its original document, in the
+// chat's references panel, which the wiki makes room for.
+const referencesDrawer = provideChatReferencesDrawer()
+const { visible: referencesPanelVisible, panelWidth: referencesPanelWidth } = referencesDrawer
+// Dragging the panel wider stops short of this readable page column.
+const WIKI_MIN_READER_WIDTH = 420
+const referencesPanelReserve = ref<number>()
+const loadCitationReference = createCitationReferenceLoader(getChunkByIdOnly)
+let citationRequestSeq = 0
 const loading = ref(false)
 const graphLoading = ref(false)
 const graphReady = ref(false)
@@ -1722,7 +1743,13 @@ async function openGraphDrawer(slug: string) {
 
 function handleGraphDrawerClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (target.classList.contains('wiki-content-link')) {
+  const citation = target.closest('.citation-kb') as HTMLElement | null
+  if (citation) {
+    e.preventDefault()
+    // The drawer would cover the references panel the source opens in.
+    graphDrawerVisible.value = false
+    void openCitation(citation)
+  } else if (target.classList.contains('wiki-content-link')) {
     e.preventDefault()
     const slug = target.getAttribute('data-slug')
     if (slug) handleGraphSearchSelect(slug)
@@ -2234,6 +2261,46 @@ watch(renderedIndexMarkdown, async () => {
     await renderWikiMermaid(indexBodyRef.value)
   }
 })
+
+async function openCitation(marker: HTMLElement) {
+  const chunkId = marker.getAttribute('data-chunk-id') || ''
+  if (!chunkId) return
+  const seq = ++citationRequestSeq
+  // Read the page first: the marker can leave the DOM while the chunk loads.
+  const anchorText = citationAnchorText(marker)
+  const markers = [...(marker.closest('.wiki-reader-body')
+    ?.querySelectorAll<HTMLElement>('.citation-kb[data-chunk-id]') ?? [marker])]
+  const reference = await loadCitationReference(chunkId, marker.getAttribute('data-doc') || '')
+  if (seq !== citationRequestSeq) return
+  if (!reference) {
+    MessagePlugin.warning(t('agentStream.citation.notFound'))
+    return
+  }
+  const contentLeft = wikiContentRef.value?.getBoundingClientRect().left
+  referencesPanelReserve.value = contentLeft === undefined ? undefined : Math.round(contentLeft) + WIKI_MIN_READER_WIDTH
+  referencesDrawer.open({
+    references: [reference],
+    highlight: { chunkId, anchorText, openSource: true, knowledgeBaseId: props.knowledgeBaseId },
+  })
+  // The page's other citations fill the list behind "Back" without delaying the source.
+  const loaded = await Promise.all(markers.map((el) =>
+    loadCitationReference(el.getAttribute('data-chunk-id') || '', el.getAttribute('data-doc') || '')))
+  if (seq !== citationRequestSeq || !referencesDrawer.visible.value) return
+  const unique = new Map<string, KnowledgeReferenceLike>()
+  for (const ref of loaded) {
+    if (ref?.id && !unique.has(ref.id)) unique.set(ref.id, ref)
+  }
+  referencesDrawer.references.value = [...unique.values()]
+}
+
+// Citation pills are role="button"; the keyboard opens them like a click.
+function handleCitationKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' && e.key !== ' ') return
+  const marker = (e.target as HTMLElement).closest?.('.citation-kb') as HTMLElement | null
+  if (!marker) return
+  e.preventDefault()
+  void openCitation(marker)
+}
 
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
@@ -5404,6 +5471,14 @@ onUnmounted(() => {
   --wiki-list-inset-x: 10px;
   --wiki-list-row-radius: 6px;
   --wiki-list-row-min-height: 30px;
+
+  // Make room for the references panel, as the chat view does.
+  &.has-references-panel {
+    @media (min-width: 960px) {
+      padding-right: var(--references-panel-width, 420px);
+      box-sizing: border-box;
+    }
+  }
 }
 
 // ── Left Sidebar ──

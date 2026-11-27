@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
-import { createRenderer, nextTick } from 'vue'
+import { createRenderer, nextTick, ref } from 'vue'
 
 const require = createRequire(import.meta.url)
 const filename = fileURLToPath(new URL('./WikiBrowser.vue', import.meta.url))
@@ -58,6 +58,10 @@ async function fixture() {
       if (name === '@/composables/useChatCitationPopover') {
         return { useChatCitationPopover: () => ({ float: {}, cancelClose() {}, scheduleClose() {} }) }
       }
+      if (name === '@/composables/useChatReferencesDrawer') {
+        return { provideChatReferencesDrawer: () => ({ visible: ref(false), panelWidth: ref(420), references: ref([]), open() {} }) }
+      }
+      if (name === '@/utils/citationAnchor') return { citationAnchorText: () => '' }
       if (name === '@/utils/assistantDataChange') return { useAssistantDataChange() {} }
       if (name === '@/stores/settings') return { useSettingsStore: () => ({}) }
       if (name === '@/api/wiki') return api

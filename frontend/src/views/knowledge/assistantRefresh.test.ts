@@ -89,6 +89,10 @@ test('refreshes Wiki pages, selected content and statistics for its own KB only'
     '@/composables/useChatCitationPopover': {
       useChatCitationPopover: () => ({ float: {}, cancelClose() {}, scheduleClose() {} }),
     },
+    '@/composables/useChatReferencesDrawer': {
+      provideChatReferencesDrawer: () => ({ visible: vue.ref(false), panelWidth: vue.ref(420), references: vue.ref([]), open() {} }),
+    },
+    '@/utils/citationAnchor': { citationAnchorText: () => '' },
     '@/stores/settings': { useSettingsStore: () => ({}) },
     '@/api/wiki': {
       getWikiPage, getWikiIndex, getWikiStats,
