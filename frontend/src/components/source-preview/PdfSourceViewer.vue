@@ -53,12 +53,14 @@ let pdfjs: PdfJs | null = null
 let loadingTask: { destroy: () => Promise<void> } | null = null
 let observer: IntersectionObserver | null = null
 let resizeObserver: ResizeObserver | null = null
+let resizeTimer: number | undefined
 let containerWidth = 0
 let disposed = false
 let locateVersion = 0
 
 const MAX_RENDERED_PAGES = 12
 const PAGE_GAP = 12
+const RESIZE_SETTLE_MS = 150
 
 function defaultRatio(): number {
   return ratios[1] || 1.414
@@ -125,7 +127,9 @@ async function renderPage(pageNumber: number): Promise<void> {
   if (disposed || pdf.value !== doc) return
   const scale = renderScale(page)
   const existing = rendered.get(pageNumber)
-  if (existing && Math.abs(existing.scale - scale) < 0.01) {
+  // The scale follows the whole-pixel container width, so any change means the
+  // canvas would be stretched (and blurred) to fit.
+  if (existing && existing.scale === scale) {
     // Wait for a render still in flight, so callers find its text layer.
     await existing.done
     return
@@ -141,6 +145,11 @@ async function renderPage(pageNumber: number): Promise<void> {
   canvas.width = Math.floor(viewport.width * dpr)
   canvas.height = Math.floor(viewport.height * dpr)
   canvas.className = 'pdf-source-page__canvas'
+  // At fractional display scaling (e.g. 125%) whole canvas pixels fall short of
+  // the page box; filling it would resample, and blur, the text. Trim the box
+  // by the rounded-off fraction so each canvas pixel lands on a screen pixel.
+  canvas.style.width = `calc(100% - ${viewport.width - canvas.width / dpr}px)`
+  canvas.style.height = `calc(100% - ${viewport.height - canvas.height / dpr}px)`
 
   const entry: RenderEntry = { scale }
   rendered.set(pageNumber, entry)
@@ -410,10 +419,12 @@ onMounted(() => {
   for (const el of pageElements.values()) observer.observe(el)
   resizeObserver = new ResizeObserver(() => {
     const width = scroller.value?.clientWidth ? scroller.value.clientWidth - 24 : 0
-    if (width && Math.abs(width - containerWidth) > 8) {
-      containerWidth = width
-      rerenderVisible()
-    }
+    if (!width || width === containerWidth) return
+    containerWidth = width
+    // Re-render once for the final width when a resize, such as dragging a
+    // panel edge, settles; until then the canvases are only stretched.
+    window.clearTimeout(resizeTimer)
+    resizeTimer = window.setTimeout(rerenderVisible, RESIZE_SETTLE_MS)
   })
   if (scroller.value) resizeObserver.observe(scroller.value)
   void load()
@@ -424,6 +435,7 @@ onBeforeUnmount(() => {
   locateVersion++
   observer?.disconnect()
   resizeObserver?.disconnect()
+  window.clearTimeout(resizeTimer)
   for (const p of [...rendered.keys()]) unrenderPage(p)
   // Destroying the loading task also destroys the document and its worker.
   void loadingTask?.destroy().catch(() => {})
