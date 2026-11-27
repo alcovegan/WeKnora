@@ -193,7 +193,8 @@ export function findInText(text: string, quote: string): { start: number; end: n
 /** Explicit quotations can survive a paraphrased sentence without fuzzy matching. */
 export function quotedSourceExcerpt(content: string, sentence: string): string | undefined {
   const source = sourceQuoteText(content)
-  const candidates = [...sentence.matchAll(/[“「『"]([^”」』"\n]{8,})[”」』"]/gu)]
+  // «Guillemets» quote in Russian, French and other languages.
+  const candidates = [...sentence.matchAll(/[“「『"«]([^”」』"»\n]{8,})[”」』"»]/gu)]
     .map(m => m[1]!).filter(q => normalizeForMatch(q).length >= 8 && findInText(source, q))
   return candidates.length === 1 ? candidates[0] : undefined
 }

@@ -13,6 +13,14 @@ test('a paraphrase with a verbatim quotation selects only supporting evidence', 
  assert.equal(quotedSourceExcerpt('其他内容。', sentence), undefined)
  assert.equal(quotedSourceExcerpt(`${source}\n${source}`, sentence), undefined)
 })
+test('guillemets mark a verbatim quotation too', () => {
+ const quote = 'Une fonction pure renvoie toujours le même résultat'
+ const sentence = `Comme le rappelle l'auteur, «${quote}» («Programmation fonctionnelle», p. 12`
+ const source = `Introduction. ${quote} pour les mêmes arguments.`
+ assert.equal(quotedSourceExcerpt(source, sentence), quote, 'a quoted title absent from the source is not a candidate')
+ assert.deepEqual(selectQuoteForSentence(source, sentence), [quote])
+ assert.equal(quotedSourceExcerpt(source, `Il écrit « ${quote} » ici.`), ` ${quote} `)
+})
 test('quotation does not relax numeric matching', () => {
  assert.equal(quotedSourceExcerpt('The cited limit is 1.5 millimeters.', 'Claim: "The cited limit is 15 millimeters."'), undefined)
 })
