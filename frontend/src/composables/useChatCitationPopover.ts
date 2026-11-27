@@ -13,6 +13,7 @@ export type ChatCitationPopoverOptions = {
   embedChannelId?: () => string | undefined
   embedToken?: () => string | undefined
   sessionId?: () => string | undefined
+  openKnowledgeCitation?: (el: HTMLElement) => boolean
 }
 
 export function useChatCitationPopover(rootRef: Ref<HTMLElement | null>, options?: ChatCitationPopoverOptions) {
@@ -32,5 +33,6 @@ export function useChatCitationPopover(rootRef: Ref<HTMLElement | null>, options
     },
     notFoundError: () => t('agentStream.citation.notFound'),
     loadError: () => t('agentStream.citation.loadFailed'),
+    openKnowledgeCitation: options?.openKnowledgeCitation,
   })
 }

@@ -45,7 +45,11 @@ class Element {
 const kb = (id = 'chunk') => new Element('citation-kb', { 'data-chunk-id': id, 'data-doc': 'Document' })
 const web = () => new Element('citation-web', { 'data-url': 'https://example.com/source' })
 
-function fixture(mode: 'chat' | 'embed', options: { drawer?: boolean; refs?: citationMarkdown.CitationKnowledgeRef[] } = {}) {
+function fixture(mode: 'chat' | 'embed', options: {
+  drawer?: boolean
+  refs?: citationMarkdown.CitationKnowledgeRef[]
+  openKnowledgeCitation?: (el: HTMLElement) => boolean
+} = {}) {
   const timers = new Map<number, { at: number; callback: () => void }>()
   let now = 0, nextId = 0, hovered = false
   const win = Object.assign(new Element(), {
@@ -101,6 +105,7 @@ function fixture(mode: 'chat' | 'embed', options: { drawer?: boolean; refs?: cit
     state = mode === 'chat'
       ? (load('useChatCitationPopover').useChatCitationPopover as typeof useChatCitationPopover)(root, {
         ...common, sessionId: () => session.value, embedChannelId: () => channel.value, embedToken: () => token.value,
+        openKnowledgeCitation: options.openKnowledgeCitation,
       })
       : (load('useEmbedCitationPopover').useEmbedCitationPopover as typeof useEmbedCitationPopover)(root, channel, token, common)
     return () => null
@@ -312,6 +317,30 @@ test('chat sessions isolate cached content and invalidate in-flight requests on 
   assert.equal(f.state.float.value.content, 'session a')
   f.session.value = ''; f.fire('click', kb()); f.requests[2]!.pending.resolve('default'); await flush()
   assert.equal(f.cache.getCitationChunkCache('default', 'chunk').content, 'default')
+})
+
+test('chat callers can open knowledge citations in their own view', async t => {
+  const opened: HTMLElement[] = []
+  let handled = true
+  const f = fixture('chat', {
+    drawer: true,
+    refs: [{ id: 'chunk', knowledge_title: 'Document' }],
+    openKnowledgeCitation: el => { opened.push(el); return handled },
+  }); t.after(f.close)
+  f.fire('mouseover', kb()); f.tick(80)
+  const citation = kb()
+  const event = f.fire('click', citation)
+  assert.equal(event.prevented && event.stopped, true)
+  assert.equal(opened[0], citation as unknown as HTMLElement)
+  assert.equal(f.drawerCalls.length, 0, 'the caller replaces the references drawer')
+  assert.equal(f.state.float.value.visible, false, 'the hover popup closes')
+  f.requests[0]!.pending.resolve('late content'); await flush()
+  assert.equal(f.state.float.value.visible, false)
+  handled = false
+  f.fire('click', kb())
+  assert.equal(f.drawerCalls.length, 1, 'an unhandled citation keeps the default behaviour')
+  f.fire('click', web())
+  assert.equal(opened.length, 2, 'web citations are not offered to the caller')
 })
 
 test('embed scopes include channel and token for both entry points and preserve API routing', async t => {

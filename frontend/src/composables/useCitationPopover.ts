@@ -28,6 +28,8 @@ type CitationPopoverOptions = {
   fetchChunk: (chunkId: string) => Promise<{ data?: { content?: unknown } } | undefined>
   notFoundError?: () => string
   loadError: () => string
+  /** Opens a clicked knowledge citation in the caller's own view; true skips the popup. */
+  openKnowledgeCitation?: (el: HTMLElement) => boolean
 }
 
 /** Shared interaction lifecycle; entry points retain their access and error policies. */
@@ -221,6 +223,10 @@ export function useCitationPopover(rootRef: Ref<HTMLElement | null>, options: Ci
     if (kbEl) {
       e.preventDefault()
       e.stopPropagation()
+      if (options.openKnowledgeCitation?.(kbEl)) {
+        reset()
+        return
+      }
       const chunkId = resolveChunkId(kbEl)
       // Chat opens the cited document at the cited passage; the embed has no
       // access to original files and keeps the reference list.
